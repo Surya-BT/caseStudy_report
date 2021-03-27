@@ -1,0 +1,896 @@
+---
+title: 'Case Study: Data Analysis of COVID-Spread in South Korea'
+author: "Mair, Thangavelu, Türmen"
+date: "23/01/2021"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    df_print: paged
+  pdf_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+knitr::opts_chunk$set(fig.width = 12, fig.height = 4, fig.align = "center")
+```
+# Introduction
+
+In December 2019, a contagious disease (COVID-19) started to spread worldwide leading to the ongoing pandemic. The disease is caused by severe acute respiratory syndrome coronavirus 2 (SARS-CoV-2), which belongs to the family of corona viruses. The first case was identified in Wuhan, China and the virus started spreading quickly (1). The virus spreads from one person to another when they are in close contact through aerosols transmitted from an infected person when they speak, sing, breathe, cough, sneeze (2). However the exact route of transmission is rarely proven (3). 
+
+South Korea was one of the first countries to identify the virus outside China, with the first cases being reported in January 2020. The government of South Korea was alert and started to implement measures to restrict the spread of the virus. The measures include, but not restricted to mass testing of population, contact tracing to track and isolate potentially infected persons. The data collected by Korea Centers for Disease Control & Prevention was used to create a structured data set (5).
+
+In this short analysis, the above-mentioned data was used to visualize the spread of the virus and subsequently develop claims regarding the pandemic. For this purpose techniques of data analysis including visualization and statistical testing was conducted using the programming language R.
+
+> "Data analysis is a process of inspecting, cleansing, transforming and modeling data with the goal of discovering  useful informaiton, informing conclusions and supporting decision-making (4)."
+
+This report presents the results of Data analysis conducted on the data from KCDC. It is divided into the following sections. The first section provides an overview of the data along with the code and  the second section provides the observations from the statistical analysis.
+
+
+
+# Data Visualisation
+## Load Essential Libraries
+In order to analyse the data, the following libraries were used.
+
+```{r message=FALSE}
+library(data.table)
+library(magrittr)
+library(tidyr) 
+library(dplyr)
+library(ggplot2)
+library(devtools)
+library(patchwork) # Draw multiple graphs at once
+library(GGally) # Correlation
+library(tidyverse) # for str_replace
+
+# the following are for the geographical maps
+library(ggmap)
+library(maps)
+library(mapdata)
+library(raster)
+
+```
+
+## Graph Theme
+
+In order to maintain the same theme for all the graphs, a theme was defined as 
+follows
+
+```{r themes}
+ThemeMain <-theme(panel.background=element_rect(fill="white"),
+                  title = element_text(size=14, face='bold'),
+                  axis.text.y =  element_text(color='black',size=10), 
+                  axis.text.x = element_text(color='black',size=10),
+                  axis.title.x = element_text(size=12,color='black'),
+                  axis.title.y = element_text(size=12,color='black'),
+                  plot.title = element_text(hjust = 0.5),
+                  legend.title = element_text(size=12,color='black'),
+                  legend.background = "white") + theme_bw()
+
+
+# the following theme is used for the spatial map
+map_theme <- theme(axis.ticks = element_blank(),axis.text = element_blank(),
+                   axis.title = element_blank(),
+                   panel.background=element_rect(fill="white"))
+
+```
+
+## Tidy Data
+
+The following data were loaded from (5).
+
+```{r message=FALSE}
+case_dt <- fread("data/Case.csv")
+patient_info_dt <- fread("data/PatientInfo.csv")
+policy_dt <- fread("data/policy.csv")
+region_dt <- fread("data/Region.csv")
+search_trend_dt <- fread("data/SearchTrend.csv")
+seoul_floating_dt <- fread("data/SeoulFloating.csv")
+time_dt <- fread("data/Time.csv")
+time_age_dt <- fread("data/TimeAge.csv")
+time_gender_dt <- fread("data/TimeGender.csv")
+time_province_dt <- fread("data/TimeProvince.csv")
+weather_dt <- fread("data/Weather.csv")
+```
+
+All date data were converted to "date" data-type in Year-Month-Day format.
+
+All categorical data was converted to "factor". 
+
+Integer and double data were converted to their data types  
+
+Required columns were renamed.
+
+The summary of all data tables were displayed to get a feel for the data and its
+distribution. It includes understanding the maximum, minimum, and average of 
+all the variables present in the data.
+
+Data tables were merged appropriately to facilitate the visualization process 
+and the subsequent statistical testing
+
+```{r warning=FALSE}
+
+# Data type conversion for case_dt
+case_dt[, `:=` (province = as.factor(province),
+                latitude = as.double(latitude),
+                longitude = as.double(longitude))]
+#summary(case_dt)
+```
+
+```{r echo=FALSE,message=FALSE,warning=FALSE}
+
+# Data type conversion for patient_info_dt
+patient_info_dt[, `:=` (sex = as.factor(sex),
+            age = as.factor(age),
+            infected_by = as.integer(infected_by),
+            contact_number = as.integer(contact_number),
+            symptom_onset_date = as.Date(symptom_onset_date, format="%Y-%m-%d"),
+            confirmed_date = as.Date(confirmed_date, format="%Y-%m-%d"),
+            released_date = as.Date(released_date, format="%Y-%m-%d"),
+            deceased_date = as.Date(deceased_date, format="%Y-%m-%d"),
+            state = as.factor(state))]
+#summary(patient_info_dt)
+
+# Data type conversion for policy_dt
+policy_dt[, `:=` (type = as.factor(type),
+                  start_date = as.Date(start_date, format="%Y-%m-%d"),
+                  end_date = as.Date(end_date, format="%Y-%m-%d"))]
+#summary(policy_dt)
+
+# Data type conversion for region_dt
+region_dt[, province := as.factor(province)]
+#summary(region_dt)
+
+# Data type conversion for search_trend_dt
+search_trend_dt[, date := as.Date(date, format="%Y-%m-%d")]
+#summary(search_trend_dt)
+
+# Data type conversion for seoul_floating_dt
+seoul_floating_dt[, `:=` (date = as.Date(date, format="%Y-%m-%d"),
+                          sex = as.factor(sex))]
+setnames(seoul_floating_dt, "hour", "time")
+#summary(seoul_floating_dt)
+
+# Data type conversion for time_dt
+time_dt[, date := as.Date(date, format="%Y-%m-%d")]
+summary(time_dt)
+
+# Data type conversion for time_age_dt
+time_age_dt[, `:=` (date = as.Date(date, format="%Y-%m-%d"),
+                    age = as.factor(age))]
+#summary(time_age_dt)
+
+# Data type conversion for time_gender_dt
+time_gender_dt[, `:=` (date = as.Date(date, format="%Y-%m-%d"),
+                       sex = as.factor(sex))]
+#summary(time_gender_dt)
+
+# Data type conversion for time_province_dt
+time_province_dt[, `:=` (date = as.Date(date, format="%Y-%m-%d"),
+                         province = as.factor(province))]
+summary(time_province_dt)
+
+# Data type conversion for weather_dt
+weather_dt[, `:=` (date = as.Date(date, format="%Y-%m-%d"),
+                   province = as.factor(province))]
+#summary(weather_dt)
+
+```
+
+## Visualisations
+Plotting is crucial to data science because:
+*It facilitates making new observations by discovering associations or patterns
+in data.
+*It facilitates communicating findings.
+*Only relying on summary statistics is dangerous because it reduces data into a 
+single number and carry much less information than a 2D representation.
+*It helps debugging either bugs in the code through visual inspection.
+
+<!-- ### Geographical distribution of number of cases -->
+<!-- ```{r warning=FALSE, echo=FALSE} -->
+
+<!-- skorea <- getData("GADM", country = "South Korea", level = 2) -->
+<!-- skorea <- fortify(skorea) -->
+
+<!-- province_location <- region_dt[province==city][province!="Korea",.(province,latitude,longitude)] -->
+
+<!-- # extracting name and location of provinces with high cases -->
+<!-- high_cases_province <- time_province_dt[,tot_confirmed:=sum(confirmed,na.rm=T),by=.(province)][1:17,][order(-tot_confirmed)] -->
+
+<!-- name_province_high_cases <- as.matrix(high_cases_province[1:5,.(province)]) -->
+<!-- name_location_province_high_cases <- province_location[province %in% name_province_high_cases] -->
+
+<!-- # plot map with high # cases -->
+<!-- ggplot() +   -->
+<!--   geom_map(data = skorea, map = skorea, aes(x=long,y=lat, map_id=id,group=group),fill=NA,color="gray") +  -->
+<!--   geom_point(data=case_lat_long_dt,aes(x=longitude,y=latitude,size=confirmed, color= "red",alpha=.5)) + -->
+<!--   coord_fixed(ratio = 0.8) + -->
+<!--   scale_size(range = c(2,7))+ -->
+<!--   geom_text(data=name_location_province_high_cases,aes(x=longitude,y=latitude,label=province)) + -->
+<!--   map_theme +  -->
+<!--   guides(color=FALSE,alpha=FALSE) -->
+<!-- ``` -->
+
+<!-- From the above spatial distribution, it can be observed that the Covid-19 cases -->
+<!-- were concentrated in two major cities:Seoul and Busan. -->
+
+### Total Number of Cases
+First, the total number of infections were plotted in a time series.
+
+```{r echo=FALSE,warning=FALSE}
+
+cases_by_date_dt <- time_province_dt[, .(
+confirmed = sum(confirmed),
+released = sum(released),
+deceased = sum(deceased)
+), by = c("date")]
+
+cases_by_date_melted_dt <- melt(
+cases_by_date_dt,
+measure.vars = c("confirmed", "released", "deceased"),
+variable.name = "status",
+value.name = "count"
+)
+
+# Spread Rate of Corona in South Korea
+plot_cases_cumulative <- ggplot(cases_by_date_melted_dt, 
+                                aes(date, count, color = status)) +
+                              geom_line(size = 1, show.legend = F) +
+                              ggtitle("COVID-19 Cases in South Korea") +
+                              xlab("Date") + 
+                              ylab("Number of Patients") +
+                              #scale_y_log10() +
+                              ThemeMain
+plot_cases_cumulative
+
+
+```
+
+The above plot displays the cumulative number of cases. It does not provide the 
+full picture of the situation that was prevailing in South Korea. Therefore,
+the cumulative data was converted into incremental and is displayed in the
+following figure
+
+```{r echo=FALSE,warning=FALSE}
+# converting cumulative data into incremental
+
+# converting cumulative into incremental
+# time data table
+time_d2d_dt <- copy(time_dt)
+
+time_d2d_dt <- time_d2d_dt[,`:=`(test_d2d=c(test[1],diff(test,differences = 1)),
+                                 negative_d2d=c(negative[1],
+                                              diff(negative,differences = 1)),
+                                 confirmed_d2d=c(confirmed[1],
+                                              diff(confirmed,differences = 1)),
+                                 released_d2d=c(confirmed[1],
+                                              diff(released,differences = 1)),
+                                 deceased_d2d=c(confirmed[1],
+                                              diff(deceased,differences = 1)))]
+
+# province data table
+time_province_d2d_dt <- copy(time_province_dt)
+
+time_province_d2d_dt <- time_province_d2d_dt[,`:=`
+                (confirmed_d2d=c(confirmed[1],diff(confirmed,differences = 1)),
+                   released_d2d=c(confirmed[1],diff(released,differences = 1)),
+                   deceased_d2d=c(confirmed[1],diff(deceased,differences = 1))),
+                by=.(province)]
+
+
+#converting age_dt from cumulative to incremental
+time_age <- time_age_dt[,confirmed_d2d:=c(confirmed[1],diff(confirmed)),
+                        by=age][,deceased_d2d:=c(deceased[1],diff(deceased)),
+                                by=age]
+
+#ggplot(time_age,aes(date,confirmed_d2d)) + geom_bar(stat="identity") + facet_wrap(~age,scales = "free")
+
+#converting gender_dt form cumulative to incremental
+time_gender <- copy(time_gender_dt)
+
+time_gender <- time_gender_dt[,confirmed_d2d:=c(confirmed[1],                                                           diff(confirmed)),by=sex][,deceased_d2d:=c(deceased[1],
+                                                        diff(deceased)),by=sex]
+
+```
+
+
+```{r echo=FALSE, warning=FALSE}
+time_d2d_cases_dt <- time_d2d_dt[, c("date", "confirmed_d2d", 
+                                     "released_d2d", "deceased_d2d")]
+
+time_d2d_cases_dt <- melt(
+time_d2d_cases_dt,
+measure.vars = c("confirmed_d2d", "released_d2d", "deceased_d2d"),
+variable.name = "status",
+value.name = "count"
+)
+
+plot_cases_d2d <-
+ggplot(time_d2d_cases_dt, aes(date, count, color = status)) +
+geom_line(size = 1) +
+ggtitle("COVID-19 Cases in South Korea\n on a day-by-day basis") +
+xlab("Date") +
+ylab("Number of Patients") +
+#scale_y_log10() +
+ThemeMain
+
+plot_cases_d2d
+```
+From the plot, it can be observed that there was a sudden surge in the number of
+infections in February 2020 and afterwards the number of daily infections 
+dropped. This plot shows that the steps taken by the government was effective
+in bringing down the daily infections.
+
+### Number of Cases per Province
+As we have a sight of how the virus spread in time, it is essential for us to 
+understand the number of infections across the different provinces. This 
+representation will provide the information of which provinces were most 
+affected by the pandemic. This representation provides the timeline of the 
+infections in different provinces.
+
+```{r echo=FALSE,warning=FALSE}
+#converting the cumulative data into incremental
+time_province_d2d_dt <- copy(time_province_dt)
+
+time_province_d2d_dt <-
+  time_province_d2d_dt[, `:=`(
+    confirmed_d2d = c(confirmed[1], diff(confirmed, differences = 1)),
+    released_d2d = c(released[1], diff(released, differences = 1)),
+    deceased_d2d = c(deceased[1], diff(deceased, differences = 1))
+  ), by = .(province)]
+
+
+plot_cases_by_province_d2d <- ggplot(time_province_d2d_dt , 
+                                aes(date, confirmed_d2d, color= province)) + 
+                                geom_point(size=1.5) +
+                                 ggtitle("Number of cases by Province\n 
+                                         on a day-by-day basis")+
+                                xlab("Date") + 
+                               ylab("Number of Positively Tested Patients") + 
+                                #scale_y_log10() +
+                                ThemeMain
+
+plot_cases_by_province_d2d
+
+```
+It can be observed that Daegu was the most affected province followed by 
+Seoul. The other provinces have almost equal distribution of cases. 
+
+```{r echo=FALSE, warning=FALSE}
+province_tot_cases <- time_province_d2d_dt[, `:=`(tot_confirmed=sum(confirmed_d2d),
+                                              tot_released = sum(released_d2d),
+                                              tot_deceased = sum(deceased_d2d)),
+                                       by=.(province)][1:17]
+
+ggplot(province_tot_cases,aes(y=reorder(province,tot_confirmed),x=tot_confirmed)) + geom_bar(stat="identity") + 
+  geom_text(aes(label=as.character(tot_confirmed)),hjust=-0.5) +
+  xlab("Total Number of Cases (-)") + 
+  ylab("Province") + 
+  ggtitle("Number of Confirmed Cases per Province") + 
+  ThemeMain
+
+```
+The 5 provinces with the highest number of cases can be observed from the plot.
+The provinces are 
+1. Daegu
+2. Gyeongsangbuk-do 
+3. Seoul
+4. Gyeonggi-do
+5. Incheon
+
+The same plot was performed for the highest number of deaths. It was observed 
+that the number of deaths per province followed the same order as that of the 
+confirmed cases.
+```{r echo=FALSE, warning=FALSE}
+
+ggplot(province_tot_cases,aes(y=reorder(province,tot_deceased),x=tot_deceased)) + geom_bar(stat="identity") + 
+  geom_text(aes(label=as.character(tot_deceased)),hjust=-0.5) +
+  xlab("Total Number of Cases (-)") + 
+  ylab("Province") + 
+  ggtitle("Number of Deceased Cases per Province") + 
+  ThemeMain
+```
+
+### Age and Gender
+The most frequent speculation during this pandemic was whether age/gender played
+a role in determining the persons getting infected. In order to visualize this 
+effect the following plots were used.
+```{r echo=FALSE, warning=FALSE}
+gender_vs_age <- patient_info_dt[,c("sex","age")]
+level_age <- gender_vs_age
+level_age$age <- factor(level_age$age, 
+                        levels = paste0(seq(0,100,by = 10), "s"))
+level_age <- level_age[ sex == c("female", "male") & age != ""]
+level_age <- level_age[, confirmed := .N, by= c("sex", "age")]
+
+# Confirmed cases by gender vs age in South Korea
+
+ggplot(level_age, aes(age, confirmed)) + 
+  geom_bar(stat = 'identity', width = 0.5,aes(fill=sex),position="dodge") +
+  #geom_boxplot() +
+  #facet_grid(~sex)+ 
+  ggtitle("Gender vs Age") + 
+  xlab("Age") + ylab("Confirmed Cases") + ThemeMain
+```
+> It can be observed that the gender/age of the person play an important role in 
+getting infected. This claim will be further investigated by a statistical test.
+
+> Will this be the case for patient deaths?
+
+To visualise this effect, the number of deaths in each group was plot facetted 
+by the gender in each age group.
+
+```{r echo=FALSE, warning=FALSE}
+# Deceased Patients per Sex in South Korea
+# More Men than Women died
+deaths_per_sex <- patient_info_dt[state == "deceased", .N , by = "sex"]
+ggplot(deaths_per_sex[sex!=""], aes(sex, N)) + geom_bar(stat = "identity",width = 0.2) + 
+  ggtitle("Deceased Patients per Sex") + xlab("Sex of Patients") + ylab("Number of Patients Deceased") + ThemeMain
+```
+When the data is plotted only for gender, it seems that higher number of female
+patients deceased than the male patients. Sometimes such data can be misleading.
+A third variable, in this case age, was introduced and data was visualized again
+
+```{r echo=FALSE, warning=FALSE}
+deaths_per_sex_and_age <- patient_info_dt[state == "deceased" & sex != "", .N , by = c("age", "sex")]
+
+ggplot(deaths_per_sex_and_age, aes(age, N, fill = sex)) + geom_bar(stat = "identity", position="dodge", width = .7) + 
+  ggtitle("Deceased Patients per Sex and Age") + xlab("Age of Patients") + ylab("Number of Patients Deceased") + ThemeMain
+```
+The above plot shows that the number of deceased female patients was higher only
+in the age group of 80. In other age groups, number of deceased male patients 
+is high. 
+
+> It also shows that number of deceased patients was higher for the older patients
+This claim was further investigated using a statistical test
+
+
+### Weather
+
+Another lasting speculation was about the weather and if it had any influence on
+the number of infections or deaths. The weather includes average temperature,
+precipitation, wind speed, etc. 
+
+From the data, the temporal variation of temperature and the number of cases was
+visualised. 
+```{r echo=FALSE, warning=FALSE}
+covid_vs_weather <- merge(weather_dt ,time_province_dt, 
+                          by = c("date", "province"))
+
+average_weather_dt <- covid_vs_weather[, .(avg_temp = mean(avg_temp, na.rm=T),
+                                           min_temp = mean(min_temp, na.rm=T),
+                                           max_temp = mean(max_temp, na.rm=T),
+                                           precipitation = mean(precipitation, na.rm=T),
+                                           max_wind_speed = mean(max_wind_speed, na.rm=T),
+                                           most_wind_direction = mean(most_wind_direction, na.rm=T),
+                                           avg_relative_humidity = mean(avg_relative_humidity, na.rm=T),
+                                           confirmed = sum(confirmed),
+                                           released = sum(released),
+                                           deceased = sum(deceased)), by = "date"]
+
+average_weather_melted_dt <- melt(average_weather_dt,
+                                  measure.vars = c("confirmed", "released", "deceased"),
+                                  variable.name = "status",
+                                  value.name = "count")
+
+average_weather_melted_dt <- melt(average_weather_melted_dt,
+                                  measure.vars = colnames(average_weather_melted_dt[,-c("date","status","count")]),
+                                  variable.name = "weather_condition")
+
+filtered_weather <- average_weather_melted_dt[weather_condition == "avg_temp" | 
+                                                weather_condition == "min_temp" | 
+                                                weather_condition == "max_temp",]
+
+# Temperature Changes in South Korea
+plot_daily_temperature <- ggplot(filtered_weather,
+             aes(date, value, color = weather_condition)) + geom_line() + 
+             ggtitle("Temperature Changes in South Korea")+xlab("Date") + 
+              ylab("Temperature") + 
+             ThemeMain
+plot_daily_temperature
+
+# Arrange plot layout
+# p3 + p4 + plot_layout(ncol = 1, heights = c(2,1.5))
+
+plot_cases_cumulative + plot_daily_temperature + plot_layout(ncol=1) 
+
+```
+
+The above plot shows the temperature and the cumulative caes in South Korea.
+
+> This cumulative cases show that temperature does have a correlation with the
+number of infections. But in reality, this is not the case.
+
+The same plot was repeated for incremental number of cases. It can be observed 
+that temperature does not correlate with the number of infections. This will be
+supported with a statistical test.
+
+```{r echo=FALSE, warning=FALSE}
+
+plot_cases_d2d + plot_daily_temperature + plot_layout(ncol = 1)
+
+plot_daily_temperature + (plot_cases_cumulative + plot_cases_d2d + plot_layout(ncol=2)) + plot_layout(nrow = 2)
+```
+
+### Recovery and Decease Time for patients
+Another important factor to be considered in this pandemic is the recovery time
+of the patients. This adds to the burden on the hospitals. If the patients have
+a longer recovery time, then the influx of new patients will increase the burden
+of the hospitals.
+
+> It would be helpful to understand the recovery time of different patients and
+if the recovery time depends on the age/gender of the patients. This claim will 
+be investigated further with a statistical test
+
+Here, the visualization of the data is provided.
+```{r echo=FALSE, warning=FALSE}
+
+patients_per_time <- copy(patient_info_dt)
+patients_per_time <- patients_per_time[, `:=` (desease_time = 
+                                    as.integer(deceased_date - confirmed_date),
+                                               desease_time_sym = as.integer(difftime(deceased_date, symptom_onset_date, units ="days")),
+                                               recovery_time = as.integer(difftime(released_date, confirmed_date, units = "days")),
+                                               recovery_time_sym = as.integer(difftime(released_date, symptom_onset_date, units ="days")))]
+
+
+ggplot(patients_per_time[age!=""],aes(as.factor(age),recovery_time))+ 
+  geom_boxplot(aes(middle=mean(desease_time))) +
+  ggtitle("Age vs Recovery-time") +
+  xlab("Age of Patients (years)") + 
+  ylab("Time taken to recover (days)") + 
+  ThemeMain
+
+```
+It is not clear from the above graph if age has any correlation with the 
+average recovery time of the patient. This claim will be further investigated 
+with a statistical test
+
+The same plot was repeated for gender of the patients. It can be inferred that 
+there is no difference between gender and recovery time of patients.
+
+```{r echo=FALSE, warning=FALSE}
+patients_per_time_melted_age_gender <- melt(patients_per_time, id.vars = c("sex", "age"), measure.vars = c("recovery_time", "desease_time"),
+                                 variable.name = "status",
+                                 value.name = "days")
+
+patients_per_time_melted_age_gender <- patients_per_time_melted_age_gender[, .N, by=c("sex", "age", "status", "days")]
+
+patients_per_time_melted_age_gender <- patients_per_time_melted_age_gender[days != is.na(days) & age != "",]
+
+patients_per_time_melted_age_gender <- separate(patients_per_time_melted_age_gender, col = status, into = c("status","time"))
+patients_per_time_melted_age_gender <- patients_per_time_melted_age_gender[, -"time"]
+
+patients_per_time_melted_age_gender_recovery <- patients_per_time_melted_age_gender[status == "recovery",]
+
+ggplot(patients_per_time_melted_age_gender_recovery, aes(sex, days)) + 
+  geom_boxplot(aes(middle=mean(days))) + 
+  xlab("Gender of patients") + 
+  ylab("Recovery time of patients (days)") + 
+  ggtitle("Recovery Time Vs Gender") + 
+  ThemeMain
+```
+### Major Spreaders
+As the virus spreads from person to person, it is important to trace the persons
+who were in contact with an infected person. KCDC also provided trace data and 
+this data was used to determine the type of patients who were spreading the 
+virus.
+
+> Do young people spread the virus? or Do male patients spread the virus?
+How do people spread the virus?
+
+Answering some of the above questions, will help in implementing impactful
+policies in future.
+
+```{r echo=FALSE, warning=FALSE}
+
+# Overview of infection cases
+infection_overview <- patient_info_dt[infection_case != "" & 
+                                        infection_case != "etc" & sex != "" & 
+                                        age != "", .N, 
+                                      by = c("sex", "age", "infection_case",
+                                             "infected_by")][order(-N)]
+
+
+infected_by_overview <- infection_overview[infected_by != "", .N, by = c("age", "infected_by")][order(-N)]
+infected_by_overview <- infected_by_overview %>% group_by(age)
+#plot overview of spreading gender
+overview_spreader <- merge(patient_info_dt, infected_by_overview, 
+                           by.x = "patient_id", by.y = "infected_by", 
+                           all.y = TRUE)
+
+
+#general overview of spreading genders and age groups
+overview_spreader_gender <- overview_spreader %>% 
+  group_by(sex) %>% 
+  summarise(sex_count = n())
+
+overview_spreader_age <- overview_spreader %>% 
+  group_by(age.x) %>% 
+  summarise(age.x_count = n())
+
+overview_spreader_age_gender <- overview_spreader[sex != "" & 
+                                                    sex != is.na(sex) & 
+                                                    age.x != "" & 
+                                                    age.x != is.na(age.x),]
+
+overview_spreader_age_gender <- overview_spreader_age_gender %>% 
+  group_by(sex, age.x) %>% 
+  summarise(age_count = n())
+
+ggplot(overview_spreader_gender[2:3,], aes(sex, sex_count, fill = sex)) + 
+  geom_bar(stat = "identity", position = "dodge", width = .2) +
+  ggtitle("Genders vs Spread of the virus") + 
+  xlab("Sex") + 
+  ylab("Number of Spreads") + 
+  ThemeMain
+```
+
+When the number of spreaders were plotted with the gender, it was observed that
+males transmit the virus more than females. But when plotted with a third 
+variable such as age, it is no longer the case. It is inferred that females in 
+the age group of 50 transmitted the virus most often, according to the data.
+This claim was further investigated using a statistical test
+
+```{r echo=FALSE, warning=FALSE}
+#plot overview of spreading gender and age groups (third variable effect)
+ggplot(overview_spreader_age_gender, aes(age.x, age_count, fill = sex)) + 
+  geom_bar(stat = "identity", position = "dodge", width = .7) +
+  ggtitle("Age Groups and Genders that spread the virus") + 
+  xlab("Age Group") +
+  ylab("Number of Spreads") + 
+  ThemeMain
+
+```
+
+KCDC also included the scenario under which the transmission took place. The 
+following plot shows the major scenarios for each age group and gender
+
+```{r echo=FALSE,message=FALSE, warning=FALSE}
+# Split the overview of infection cases per Gender into top 3
+infection_overview_top3_sex <- infection_overview %>% group_by(sex, infection_case) %>% summarise(count = n()) %>% top_n(n=3, wt = count)
+
+# plot top 3 infection cases per gender
+ggplot(infection_overview_top3_sex, aes(infection_case, count, fill = sex)) + geom_bar(stat = "identity", position = "dodge", width = .7) +
+  ggtitle("Top 3 Infection Cases per Gender") + xlab("Infection Case") + ylab("Number of Infections") + ThemeMain
+
+# Split the overview of infection cases per Age into top 3
+infection_overview_top3_age <- infection_overview %>% group_by(age, infection_case) %>% summarise(count = n()) %>% top_n(n=3, wt = count)
+
+#change order of levels
+infection_overview_top3_age$age <- ordered(infection_overview_top3_age$age, levels = c("0s", "10s", "20s", "30s", "40s", "50s", "60s", "70s", "80s", "90s", "100s"))
+
+# plot top 3 infection cases per age
+ggplot(infection_overview_top3_age, aes(age, count, fill = infection_case)) + geom_bar(stat = "identity", width = .7) +
+  ggtitle("Top 3 Infection Cases per Age") + xlab("Age") + ylab("Number of Infections") + ThemeMain
+
+```
+
+# Statistical Test
+Statistical tests work by calculating a test statistic – a number that describes
+how much the relationship between variables in your test differs from the null 
+hypothesis of no relationship.
+
+An important factor to consider when applying a statistical test is to check 
+whether the data on which the test is applied conforms to the assumptions of
+the test.
+
+In this study, a correlation test is applied to test if one quantitative 
+variable has an effect on the other continuous variable. Hence, a Q-Q plot is 
+used to confirm if the data follows the distribution assumed by the test. 
+For example, the spearman's rank correlation test (6) assumes that the data 
+follows a normal distribution.
+
+## Gender and number of cases
+To test where there is a correlation between the gender and the number of 
+recorded cases, the wilcoxson test was performed.
+
+Gender is a categorical variable whereas number of recored cases is a 
+quantitative variable and to test a relationship between such two variables, 
+the t-test is preferred. However, to apply the t-test, the distribution of data
+within the two categorical variable should be normal. In order to test if this 
+assumption holds, a Q-Q plot was used as shown below
+
+```{r}
+
+qqplot_males <- ggplot(time_gender[sex=="male"],aes(sample=confirmed_d2d)) + 
+  stat_qq() + 
+  stat_qq_line(col="red",show.legend = T) + 
+  xlab("Theorectical Normal distribution") + 
+  ylab("Number of confirmed cases") + 
+  ggtitle("Q-Q Plot for number of cases among Males") + 
+  ThemeMain
+
+qqplot_females <- ggplot(time_gender[sex=="female"],aes(sample=confirmed_d2d)) + 
+  stat_qq() + 
+  stat_qq_line(col="red",show.legend = T) + 
+  xlab("Theorectical Normal distribution") + 
+  ylab("Number of confirmed cases") + 
+  ggtitle("Q-Q Plot for number of cases among Females") + 
+  ThemeMain
+
+qqplot_males + qqplot_females + plot_layout(ncol=2)
+
+```
+It can be observed that although the data follows a normal distribution, there
+are outliers and because of the presence of outliers, t-test cannot be applied
+in this case. Hence a wilcoxson test was used.
+
+>The null hypothesis was stated as follows: Gender does not play an important
+role in number of recorded cases.
+
+```{r}
+gender_tst_wilcox <- wilcox.test(data=time_gender,confirmed_d2d~sex)
+gender_tst_wilcox$p.value 
+```
+
+The P-value was obtained to be 0.46, which is greater than 0.05(our alpha value
+for determining the validity of null hypothesis). 
+As the P-value is greater than 0.05, the null hypothesis was rejected.
+Thus, a particular gender is not expected to be affected more.
+
+## Average Recovery Time Vs Age
+We have seen from section 2.2 that the recovery time is greater for older people.
+To test this statistical significance of this observation, a statistical test
+is performed. The spearman's rank correlation test is choosen for this purpose.
+
+> Spearman's correlation test is a non-parametric measure of rank correlation
+((statistical dependence between the rankings of two variables). It assesses 
+how well the relationship between two variables can be described using a 
+monotonic function (6).
+
+This test eliminates the effect of outliers on the correlation. In our data, 
+the average recovery time of age 100 is an outlier because it has only one 
+observation. Therefore, this test is best-suited for this purpose.
+
+```{r warning=FALSE}
+decease_dt_age_num <- patients_per_time[,age:=str_replace(age,"s","")][,age:=
+                                                                         as.integer(age)]
+# statistical testing to support the observation ----------------------------
+# H0: the average time for recovery is the same across all age groups
+ggplot(patients_per_time[age!=""],aes(as.factor(age),recovery_time))+ 
+  geom_boxplot(aes(middle=mean(desease_time))) +
+  ggtitle("Age vs Recovery-time") +
+  xlab("Age of Patients (years)") + 
+  ylab("Time taken to recover (days)")
+
+# Using aov to find correlation between the age group and average time of recovery in each group
+recovery_age_aov_new <- patients_per_time[age!="",aov(recovery_time~as.factor(age))]
+summary(recovery_age_aov_new) # 2e-16 < 0.005 => reject null
+
+# convert age into num and find the correlation 
+recovery_age_cor_new <- decease_dt_age_num[,cor.test(age,recovery_time,method="spearman")]
+
+ggplot(decease_dt_age_num,aes(age,recovery_time)) + 
+  geom_point() + 
+  stat_smooth(method = lm) + 
+  geom_label(x=10,y=90,label=paste("Spearman=",round(recovery_age_cor_new$estimate,2))) +
+  ggtitle("Correlation between age and recovery time of patient") +
+  xlab("Age of patients") + 
+  ylab("Time taken to recover (days)") + 
+  ThemeMain
+
+```
+The correlation coefficient is 0.16. It shows that there is a small positive
+correlation between recovery time of patients. However, this coefficient is
+low and it is not enough to conclude this observation. More data is required.
+
+## Average Decease Time Vs Age
+The same statistical test was conducted to verify the correlation between the 
+age of the patient and decease time.
+
+```{r warning=FALSE}
+decease_age_cor_new <- decease_dt_age_num[,cor.test(age,desease_time,method="spearman")]
+
+ggplot(decease_dt_age_num,aes(age,desease_time)) + 
+  geom_point() + 
+  stat_smooth(method = lm) + 
+  geom_label(x=60,y=50,label=paste("Spearman=",round(decease_age_cor_new$estimate,2))) +
+  ggtitle("Correlation between age and decease time of patient") +
+  xlab("Age of patients") + 
+  ylab("Time between disease-confirmation and decease")
+
+
+```
+
+The correlation coefficient is 0.27, which signifies a stronger correlation with
+age compared to the recovery time. 
+
+## Number of Deceased Vs Age
+The spearman correlation test performed between age and number of deceased 
+cases revealed that there is a strong positive correlation between them. 
+However, in this study the exact age of the patient is not know. Only the 
+number of cases in a particular age group is known. With this information, there
+seems to be a positive correlation but more information is needed to confirm
+this observation.
+
+```{r}
+# correlation test ----------------------------------------------------------
+# age vs total number of confirmed cases and number of deaths
+time_age_num <- time_age %>% mutate(str_replace(time_age$age,"s",""))
+time_age_num <-time_age_num[,age:=NULL]
+sn <- names(time_age_num)[1:6]
+names(time_age_num) <- c(sn,"age")
+time_age_num <- time_age_num[,age:=as.numeric(age)]
+
+
+time_age_num <- time_age_num[,tot_confirmed:=sum(confirmed_d2d),by=.(age)]
+time_age_num <- time_age_num[,tot_deceased:=sum(deceased_d2d),by=.(age)]
+
+
+time_age_num_cor_dt <- time_age_num[1:9,.(age,tot_confirmed,tot_deceased)]
+
+age_num_cor <- time_age_num_cor_dt[,cor.test(age,tot_confirmed,method = "spearman")]
+
+age_num_cor_de <- time_age_num_cor_dt[,cor.test(age,tot_deceased,method = "spearman")]
+
+ggplot(time_age_num_cor_dt,aes(age,tot_confirmed)) + 
+  geom_point() + geom_smooth(method = lm) + 
+  geom_label(x=20,y=2500,label=paste("Spearman=",round(age_num_cor$estimate,2)))+ 
+  xlab("Age of Patients (years)") +
+  ylab("Total Number of Confirmed Cases (-)") +
+  ggtitle("Age Vs Total Number of Confirmed Cases") +
+  ThemeMain
+
+ggplot(time_age_num_cor_dt,aes(age,tot_deceased)) + 
+  geom_point() + 
+  geom_smooth(method = lm) + 
+  geom_label(x=20,y=100,label=paste("Spearman=",round(age_num_cor_de$estimate,2)))+ 
+  xlab("Age of Patients (years)") +
+  ylab("Total Number of Deaths (-)") +
+  ggtitle("Age Vs Total Number of Deaths") +
+  ThemeMain
+```
+
+## Impact of Weather on the spread of Covid-19
+When the pandemic first started, there was a wide speculation about the role of
+weather on the spread of the virus. Therefore, with the available data, the 
+relationship between weather params such as average temperature, maximum 
+temperature, maximum temperature and precipitation was tested in this study. 
+
+To keep the report length in check, only the correaltion between average
+temperature and number of confirmed cases is presented in this report. 
+
+```{r warning=FALSE}
+time_province_covid_weather <- time_province_dt[province!="Sejong"][date != as.Date("2020-06-30")]
+time_province_covid_weather <- time_province_covid_weather[,`:=`(confirmed_d2d=c(confirmed[1],diff(confirmed)),
+                                                                 released_d2d=c(released[1],diff(released)),
+                                                                 deceased_d2d = c(deceased[1],diff(deceased))),
+                                                           by=.(province)]
+
+weather_2020_dt <- weather_dt[date >= as.Date("2020-01-20")]
+
+# merge weather and province data
+#rm(weather_covid_province_dt)
+weather_covid_province_dt <- merge(weather_2020_dt,time_province_covid_weather,by=c("date","province"),all=T)
+
+avgTemp_confirmed_cor <- weather_covid_province_dt[,cor.test(avg_temp,confirmed_d2d,method="spearman")]
+
+ggplot(weather_covid_province_dt,aes(confirmed_d2d,avg_temp)) + 
+  geom_point() + 
+  geom_smooth(method=lm) + 
+  geom_label(x=5,y=5,label=paste("Spearman=",round(avgTemp_confirmed_cor$estimate,2)))+ 
+  xlab("Number of Confirmed Cases") + 
+  ylab("Average Temperature (°C)") + 
+  ggtitle("Correlation between Average Temperature and the Number of infections") +
+  ThemeMain
+```
+
+There is no significant correlation between average temperature and the number
+of confirmed cases. The same behaviour was observed for other weather parameters
+
+
+
+# References
+
+1. https://en.wikipedia.org/wiki/Coronavirus_disease_2019
+
+2. Coronavirus Disease 2019 (COVID-19)". U.S. Centers for Disease Control and Prevention (CDC). 11 February 2020. Retrieved 6 December 2020.
+
+3. Transmission of SARS-CoV-2: implications for infection prevention precautions". World Health Organization (WHO).
+
+4. https://en.wikipedia.org/wiki/Data_analysis
+
+5. https://www.kaggle.com/kimjihoo/coronavirusdataset
+
+6. https://en.wikipedia.org/wiki/Spearman%27s_rank_correlation_coefficient
